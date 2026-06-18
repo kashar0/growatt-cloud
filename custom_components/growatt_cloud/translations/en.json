@@ -6,7 +6,8 @@
         "description": "Enter your Growatt / ShinePhone account credentials.",
         "data": {
           "username": "Email address",
-          "password": "Password"
+          "password": "Password",
+          "server_url": "Server region"
         }
       },
       "plant": {

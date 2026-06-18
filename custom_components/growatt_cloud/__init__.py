@@ -11,7 +11,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .const import DEFAULT_POLL_INTERVAL, DOMAIN
+from .const import DEFAULT_POLL_INTERVAL, DEFAULT_SERVER, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 PLATFORMS = ["sensor"]
@@ -59,44 +59,38 @@ class GrowattCoordinator(DataUpdateCoordinator):
 
     def _fetch(self) -> dict:
         cfg = self.entry.data
-        username = cfg["username"]
-        password = cfg["password"]
-        plant_id = cfg["plant_id"]
-        device_sn = cfg["device_sn"]
+        username   = cfg["username"]
+        password   = cfg["password"]
+        server_url = cfg.get("server_url", DEFAULT_SERVER)
+        plant_id   = cfg["plant_id"]
+        device_sn  = cfg["device_sn"]
+        device_type = cfg.get("device_type", "inv")
 
         api = growattServer.GrowattApi()
-        api.server = "https://server.growatt.com/"
+        api.server_url = server_url
 
         result = api.login(username, password)
-        if not result or result.get("result") != 1:
-            raise ConfigEntryAuthFailed("Growatt login failed - check credentials")
-
-        # Fetch device list to determine type
-        devices = api.device_list(plant_id) or []
-        device_type = next(
-            (d.get("deviceType", "inv") for d in devices if d.get("deviceSn") == device_sn),
-            "inv",
-        )
+        if not result or not result.get("success"):
+            raise ConfigEntryAuthFailed("Growatt login failed - check your credentials")
 
         data = self._fetch_device_data(api, plant_id, device_sn, device_type)
         if data is None:
             raise UpdateFailed(f"No data returned for inverter {device_sn}")
 
-        # Store device info for HA device registry
         if not self.device_info:
             self.device_info = {
                 "identifiers": {(DOMAIN, device_sn)},
-                "name": f"Growatt Inverter {device_sn}",
+                "name": f"Growatt {device_sn}",
                 "manufacturer": "Growatt",
                 "model": data.get("deviceModel") or data.get("model") or "Growatt Inverter",
                 "serial_number": device_sn,
             }
 
         _LOGGER.debug(
-            "Fetched data for %s: pac=%.1fW eacToday=%.2fkWh",
+            "Fetched data for %s: pac=%s eacToday=%s",
             device_sn,
-            float(data.get("pac") or data.get("outPutPower") or 0),
-            float(data.get("eacToday") or data.get("eAcToday") or 0),
+            data.get("pac") or data.get("outPutPower", "?"),
+            data.get("eacToday") or data.get("eAcToday", "?"),
         )
 
         try:
@@ -113,37 +107,27 @@ class GrowattCoordinator(DataUpdateCoordinator):
         device_sn: str,
         device_type: str,
     ) -> dict | None:
-        """Try the appropriate API method for the device type, fall back gracefully."""
-        dtype = device_type.lower()
+        """Fetch real-time data using the correct API method for the device type."""
+        dtype = (device_type or "inv").lower()
 
-        fetchers = []
-        if dtype in ("inv", "inverter"):
-            fetchers = [
-                lambda: api.inverter_detail(plant_id, device_sn),
-                lambda: api.mix_detail(plant_id, device_sn),
-            ]
-        elif dtype == "mix":
-            fetchers = [
-                lambda: api.mix_detail(plant_id, device_sn),
-                lambda: api.inverter_detail(plant_id, device_sn),
-            ]
-        elif dtype == "tlx":
-            fetchers = [
-                lambda: api.tlx_detail(plant_id, device_sn),
-                lambda: api.inverter_detail(plant_id, device_sn),
-            ]
-        else:
-            fetchers = [
-                lambda: api.inverter_detail(plant_id, device_sn),
-                lambda: api.mix_detail(plant_id, device_sn),
-            ]
+        try:
+            if dtype == "mix":
+                # mix_system_status gives real-time data for hybrid inverters
+                return api.mix_system_status(device_sn, plant_id)
+            elif dtype == "tlx":
+                return api.tlx_detail(device_sn)
+            else:
+                # Standard on-grid string inverter (inv, spa, etc.)
+                return api.inverter_detail(device_sn)
+        except Exception as exc:
+            _LOGGER.warning(
+                "Primary fetch failed for %s (%s): %s - trying inverter_detail fallback",
+                device_sn, dtype, exc,
+            )
 
-        for fetcher in fetchers:
-            try:
-                data = fetcher()
-                if data and isinstance(data, dict):
-                    return data
-            except Exception as exc:
-                _LOGGER.debug("Fetcher failed: %s", exc)
-
-        return None
+        # Fallback: try inverter_detail for any unrecognised type
+        try:
+            return api.inverter_detail(device_sn)
+        except Exception as exc:
+            _LOGGER.error("Fallback fetch also failed for %s: %s", device_sn, exc)
+            return None

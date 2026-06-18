@@ -1,0 +1,43 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Growatt Cloud - Login",
+        "description": "Enter your Growatt / ShinePhone account credentials.",
+        "data": {
+          "username": "Email address",
+          "password": "Password"
+        }
+      },
+      "plant": {
+        "title": "Growatt Cloud - Select Plant & Inverter",
+        "description": "Choose which plant and inverter to monitor, and how often to poll.",
+        "data": {
+          "plant_id": "Plant",
+          "device_sn": "Inverter",
+          "poll_interval": "Poll interval (minutes)"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Login failed. Check your email and password.",
+      "cannot_connect": "Cannot connect to Growatt cloud. Check your internet connection.",
+      "no_plants": "No plants found on this account.",
+      "no_devices": "No inverters found in the selected plant.",
+      "unknown": "Unexpected error. Check HA logs for details."
+    },
+    "abort": {
+      "already_configured": "This inverter is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Growatt Cloud - Options",
+        "data": {
+          "poll_interval": "Poll interval (minutes)"
+        }
+      }
+    }
+  }
+}

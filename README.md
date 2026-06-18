@@ -2,16 +2,50 @@
 
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/hacs/integration)
 
-A HACS custom integration that connects your **Growatt solar inverter** to Home Assistant via the Growatt cloud API. No MQTT, no Node.js, no extra config files - just enter your credentials in the HA UI and all sensors appear automatically.
+A HACS custom integration that connects your **Growatt on-grid or hybrid solar inverter** to Home Assistant via the Growatt cloud API. No MQTT, no YAML, no extra config - just enter your credentials in the HA UI and all sensors appear automatically.
+
+> **Developed and tested on:**
+> Growatt MOD15KTL3-X (3-phase on-grid inverter) + ShineX datalogger
+
+---
+
+## Compatibility
+
+### Inverter types supported
+
+| Type | Series | API method used |
+|---|---|---|
+| On-grid string inverter | MOD, MIN, MAX, SPH | `inverter_detail` |
+| Hybrid / MIX inverter | SPH, MID | `mix_detail` |
+| TLX inverter | TL-X series | `tlx_detail` |
+
+> Battery charge/discharge sensors for hybrid inverters are not yet included. Open an issue if you need them.
+
+### Datalogger requirement
+
+Your inverter **must** be connected to the Growatt cloud via one of these dataloggers:
+- **ShineX** (WiFi stick, USB)
+- **ShineWifi** / **ShineWifi-X**
+- **ShineLink** / **ShineLAN**
+
+As long as your inverter shows live data in the **ShinePhone app** or **[server.growatt.com](https://server.growatt.com)**, this integration will work.
+
+### Does NOT work with
+
+- Inverters connected only via local LAN with no cloud uplink
+- Inverters not visible in ShinePhone / Growatt web portal
+- Non-Growatt inverters
+
+---
 
 ## Features
 
 - Full setup wizard in the Home Assistant UI (no YAML editing)
 - Auto-discovers your plant and inverter from your Growatt account
 - Creates 30+ sensor entities (power, voltage, current, energy, temperature)
-- Works with all Growatt inverter types (string, hybrid/mix, TLX)
+- Works with on-grid string, hybrid/MIX, and TLX inverter types
 - Configurable poll interval (default every 5 minutes)
-- Sensors go unavailable when inverter is offline
+- Sensors go unavailable when inverter is offline (normal at night)
 
 ---
 
@@ -98,11 +132,11 @@ Open an issue with your inverter model. Different models use different API respo
 
 ---
 
-## Supported inverter types
+## Confirmed working
 
-- Standard string inverters (inv) - e.g. MOD series, MIN series
-- Hybrid/MIX inverters (mix)
-- TLX inverters
+- **Growatt MOD15KTL3-X** (3-phase on-grid, 15kW) + ShineX datalogger - developed and tested on this
+
+If you've tested with another model and it works (or doesn't), please open an issue so we can update this list.
 
 ---
 

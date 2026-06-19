@@ -38,6 +38,13 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     return unloaded
 
 
+def _safe_float(value, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
 class GrowattCoordinator(DataUpdateCoordinator):
     """Polls Growatt cloud API and distributes data to sensor entities."""
 
@@ -59,11 +66,11 @@ class GrowattCoordinator(DataUpdateCoordinator):
 
     def _fetch(self) -> dict:
         cfg = self.entry.data
-        username   = cfg["username"]
-        password   = cfg["password"]
-        server_url = cfg.get("server_url", DEFAULT_SERVER)
-        plant_id   = cfg["plant_id"]
-        device_sn  = cfg["device_sn"]
+        username    = cfg["username"]
+        password    = cfg["password"]
+        server_url  = cfg.get("server_url", DEFAULT_SERVER)
+        plant_id    = cfg["plant_id"]
+        device_sn   = cfg["device_sn"]
         device_type = cfg.get("device_type", "inv")
 
         api = growattServer.GrowattApi()
@@ -73,24 +80,54 @@ class GrowattCoordinator(DataUpdateCoordinator):
         if not result or not result.get("success"):
             raise ConfigEntryAuthFailed("Growatt login failed - check your credentials")
 
-        data = self._fetch_device_data(api, plant_id, device_sn, device_type)
-        if data is None:
-            raise UpdateFailed(f"No data returned for inverter {device_sn}")
+        # plant_info returns the device list with real-time power/energy for all inverter types.
+        # inverter_detail / tlx_detail / mix_system_status only work for specific older models.
+        plant = api.plant_info(plant_id)
+
+        device_row = next(
+            (d for d in plant.get("deviceList", []) if d.get("deviceSn") == device_sn),
+            {},
+        )
+
+        if not device_row:
+            _LOGGER.warning("Device %s not found in plant %s device list", device_sn, plant_id)
+
+        # Normalise to the field names sensor.py already knows about
+        data: dict = {
+            # Power (W) - plant_info returns a string like "5431.2"
+            "pac":      _safe_float(device_row.get("power")),
+            # Energy today (kWh)
+            "eacToday": _safe_float(device_row.get("eToday")),
+            # Energy total lifetime (kWh)
+            "eacTotal": _safe_float(device_row.get("energy")),
+            # Status code (0=waiting, 1=normal, 2=fault, 3=flash)
+            "status":   device_row.get("deviceStatus", 0),
+            # Extra plant-level totals (also match sensor api_keys)
+            "totalEnergy": _safe_float(plant.get("totalEnergy")),
+            "todayEnergy": _safe_float(plant.get("todayEnergy")),
+        }
+
+        # For MIX/TLX inverters try to augment with detailed real-time data
+        dtype = (device_type or "inv").lower()
+        detailed = self._try_detail(api, plant_id, device_sn, dtype)
+        if detailed:
+            # Merge: only overwrite zeros in base data with non-zero detail values
+            for k, v in detailed.items():
+                if k not in data or (data[k] == 0 and v != 0):
+                    data[k] = v
 
         if not self.device_info:
             self.device_info = {
                 "identifiers": {(DOMAIN, device_sn)},
                 "name": f"Growatt {device_sn}",
                 "manufacturer": "Growatt",
-                "model": data.get("deviceModel") or data.get("model") or "Growatt Inverter",
+                "model": device_row.get("deviceModel") or "Growatt Inverter",
                 "serial_number": device_sn,
             }
 
         _LOGGER.debug(
-            "Fetched data for %s: pac=%s eacToday=%s",
-            device_sn,
-            data.get("pac") or data.get("outPutPower", "?"),
-            data.get("eacToday") or data.get("eAcToday", "?"),
+            "Growatt %s - pac=%.1fW eacToday=%.1fkWh eacTotal=%.1fkWh status=%s",
+            device_sn, data["pac"], data["eacToday"], data["eacTotal"], data["status"],
         )
 
         try:
@@ -100,34 +137,19 @@ class GrowattCoordinator(DataUpdateCoordinator):
 
         return data
 
-    def _fetch_device_data(
+    def _try_detail(
         self,
         api: growattServer.GrowattApi,
         plant_id: str,
         device_sn: str,
-        device_type: str,
+        dtype: str,
     ) -> dict | None:
-        """Fetch real-time data using the correct API method for the device type."""
-        dtype = (device_type or "inv").lower()
-
+        """Optionally fetch extra real-time fields for MIX/TLX inverters."""
         try:
             if dtype == "mix":
-                # mix_system_status gives real-time data for hybrid inverters
                 return api.mix_system_status(device_sn, plant_id)
-            elif dtype == "tlx":
+            if dtype == "tlx":
                 return api.tlx_detail(device_sn)
-            else:
-                # Standard on-grid string inverter (inv, spa, etc.)
-                return api.inverter_detail(device_sn)
         except Exception as exc:
-            _LOGGER.warning(
-                "Primary fetch failed for %s (%s): %s - trying inverter_detail fallback",
-                device_sn, dtype, exc,
-            )
-
-        # Fallback: try inverter_detail for any unrecognised type
-        try:
-            return api.inverter_detail(device_sn)
-        except Exception as exc:
-            _LOGGER.error("Fallback fetch also failed for %s: %s", device_sn, exc)
-            return None
+            _LOGGER.debug("Detail fetch skipped for %s (%s): %s", device_sn, dtype, exc)
+        return None

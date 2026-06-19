@@ -49,7 +49,7 @@ SENSORS: tuple[GrowattSensorDescription, ...] = (
     GrowattSensorDescription(
         key="pvpowerout",
         name="AC Output Power",
-        api_keys=("pac", "outPutPower", "acPower"),
+        api_keys=("pac", "outPutPower", "acPower", "power"),
         native_unit_of_measurement=UnitOfPower.WATT,
         device_class=SensorDeviceClass.POWER,
         state_class=SensorStateClass.MEASUREMENT,
@@ -220,7 +220,7 @@ SENSORS: tuple[GrowattSensorDescription, ...] = (
     GrowattSensorDescription(
         key="pvenergytoday",
         name="Energy Today",
-        api_keys=("eacToday", "eAcToday", "todayEnergy"),
+        api_keys=("eacToday", "eAcToday", "todayEnergy", "eToday"),
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
         device_class=SensorDeviceClass.ENERGY,
         state_class=SensorStateClass.TOTAL_INCREASING,
@@ -228,7 +228,7 @@ SENSORS: tuple[GrowattSensorDescription, ...] = (
     GrowattSensorDescription(
         key="pvenergytotal",
         name="Energy Total",
-        api_keys=("eacTotal", "eAcTotal", "totalEnergy"),
+        api_keys=("eacTotal", "eAcTotal", "totalEnergy", "energy"),
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
         device_class=SensorDeviceClass.ENERGY,
         state_class=SensorStateClass.TOTAL_INCREASING,
